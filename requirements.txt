@@ -1,0 +1,4 @@
+aiogram>=3.10,<4
+instaloader>=4.10
+openai>=1.30
+aiohttp>=3.9
