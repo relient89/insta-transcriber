@@ -1,6 +1,7 @@
 """
-Instagram Video Transcriber — Telegram Bot
-Парсит Instagram-профили, скачивает видео, транскрибирует через OpenAI Whisper.
+Instagram Video Transcriber — Telegram Bot (DEMO)
+Парсит Instagram-профили, скачивает видео, извлекает аудио.
+Пробная версия: транскрипция-заглушка (не требует OpenAI API key).
 """
 
 import asyncio
@@ -9,7 +10,6 @@ import os
 import re
 import tempfile
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +24,6 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-from openai import AsyncOpenAI
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -40,18 +39,13 @@ log = logging.getLogger("insta-transcriber")
 # Configuration
 # ---------------------------------------------------------------------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
 if not BOT_TOKEN:
     raise ValueError(
         "BOT_TOKEN не задан. Установите переменную окружения BOT_TOKEN "
         "с токеном вашего Telegram-бота (@BotFather)."
     )
-if not OPENAI_API_KEY:
-    raise ValueError(
-        "OPENAI_API_KEY не задан. Установите переменную окружения OPENAI_API_KEY "
-        "с ключом от OpenAI API (https://platform.openai.com/api-keys)."
-    )
+
+DEMO_MODE = True  # Пробная версия — заглушка вместо Whisper
 
 DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "insta_downloads"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -61,7 +55,6 @@ WHISPER_MAX_SIZE = 25 * 1024 * 1024  # 25 MB
 ANTI_SPAM_DELAY = 0.6  # seconds between Telegram messages
 
 bot = Bot(token=BOT_TOKEN, default=types.DefaultBotProperties(parse_mode=ParseMode.HTML))
-openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 router = Router()
 
 # In-memory per-user state: {user_id: {"username": str}}
@@ -190,35 +183,17 @@ def cleanup(*paths: Path) -> None:
 # Transcription
 # ---------------------------------------------------------------------------
 async def transcribe_audio(audio_path: Path) -> dict[str, Any]:
-    """Send *audio_path* to OpenAI Whisper and return transcription data."""
-    target = audio_path
-    trimmed: Path | None = None
-
-    if audio_path.stat().st_size > WHISPER_MAX_SIZE:
-        log.warning("Audio > 25 MB — trimming to 10 min")
-        trimmed = await trim_audio(audio_path, max_seconds=600)
-        target = trimmed
-
-    try:
-        with open(target, "rb") as f:
-            response = await openai_client.audio.transcriptions.create(
-                model="whisper-1",
-                file=f,
-                response_format="verbose_json",
-                timestamp_granularities=["segment"],
-                language="ru",
-            )
-        return {
-            "text": response.text,
-            "duration": getattr(response, "duration", 0),
-            "segments": [
-                {"start": s.start, "end": s.end, "text": s.text}
-                for s in (getattr(response, "segments", None) or [])
-            ],
-        }
-    finally:
-        if trimmed:
-            cleanup(trimmed)
+    """DEMO: возвращает заглушку с информацией о файле вместо реальной транскрипции."""
+    size_mb = audio_path.stat().st_size / 1e6
+    return {
+        "text": (
+            f"[DEMO] Транскрипция недоступна в пробной версии.\n"
+            f"Аудио извлечено успешно: {audio_path.name} ({size_mb:.1f} MB).\n"
+            f"Для реальной транскрипции добавьте OPENAI_API_KEY и отключите DEMO_MODE."
+        ),
+        "duration": 0,
+        "segments": [],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -339,12 +314,12 @@ def split_message(text: str, limit: int = MAX_TG_MESSAGE_LEN) -> list[str]:
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     await message.answer(
-        "👋 <b>Instagram Video Transcriber</b>\n\n"
+        "👋 <b>Instagram Video Transcriber (DEMO)</b>\n\n"
         "Отправь мне ссылку на публичный Instagram-профиль, и я:\n"
         "1. Найду последние видео\n"
-        "2. Скачаю и извлеку аудио\n"
-        "3. Распознаю речь через OpenAI Whisper\n"
-        "4. Верну текстовую транскрипцию\n\n"
+        "2. Скачаю и извлеку аудио через FFmpeg\n"
+        "3. Покажу информацию о каждом видео\n\n"
+        "⚠️ Пробная версия — транскрипция-заглушка.\n\n"
         "Пример: <code>instagram.com/durov</code>",
     )
 
